@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Advanced Synonyms Flashcards</title>
+<style>
+  :root { --bg:#0f172a; --card:#1d4ed8; --card-back:#f8fafc; --accent:#38bdf8; --text:#e2e8f0; }
+  * { box-sizing: border-box; }
+  body { margin:0; min-height:100vh; background:var(--bg); color:var(--text);
+         font-family: system-ui, sans-serif; display:flex; flex-direction:column; align-items:center; padding:20px; }
+  h1 { font-size:1.4rem; margin:8px 0 4px; }
+  .sub { opacity:.7; font-size:.9rem; margin-bottom:16px; text-align:center; }
+  .controls { display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin-bottom:16px; }
+  button { background:#1e293b; color:var(--text); border:1px solid #334155; padding:10px 16px;
+           border-radius:10px; font-size:.95rem; cursor:pointer; }
+  button:hover { border-color:var(--accent); }
+  button.primary { background:var(--accent); color:#0f172a; border:none; font-weight:600; }
+  .scene { width:min(92vw,420px); height:260px; perspective:1000px; cursor:pointer; }
+  .card { position:relative; width:100%; height:100%; transition:transform .5s; transform-style:preserve-3d; }
+  .card.flipped { transform:rotateY(180deg); }
+  .face { position:absolute; inset:0; backface-visibility:hidden; border-radius:18px;
+          display:flex; flex-direction:column; align-items:center; justify-content:center;
+          font-size:2.2rem; font-weight:700; box-shadow:0 10px 30px rgba(0,0,0,.4); padding:16px; text-align:center; }
+  .front { background:var(--card); color:#fff; }
+  .back { background:var(--card-back); color:#1d4ed8; transform:rotateY(180deg); }
+  .label { font-size:.75rem; font-weight:500; letter-spacing:.1em; text-transform:uppercase; opacity:.7; margin-bottom:10px; }
+  .progress { margin:16px 0 8px; font-size:.95rem; }
+  .bar { width:min(92vw,420px); height:6px; background:#1e293b; border-radius:3px; overflow:hidden; }
+  .bar > div { height:100%; background:var(--accent); width:0; transition:width .3s; }
+  .hint { opacity:.55; font-size:.8rem; margin-top:14px; text-align:center; }
+</style>
+</head>
+<body>
+  <h1>100 Advanced Synonyms</h1>
+  <div class="sub">Words 41–100</div>
+
+  <div class="controls">
+    <button id="shuffle">🔀 Shuffle</button>
+    <button id="direction">Basic → Advanced</button>
+    <button id="learningOnly">Review "learning" only</button>
+    <button id="reset">Reset</button>
+  </div>
+
+  <div class="scene" id="scene">
+    <div class="card" id="card">
+      <div class="face front"><div class="label" id="frontLabel">Basic word</div><div id="frontText"></div></div>
+      <div class="face back"><div class="label" id="backLabel">Advanced synonym</div><div id="backText"></div></div>
+    </div>
+  </div>
+
+  <div class="progress" id="progress"></div>
+  <div class="bar"><div id="barFill"></div></div>
+
+  <div class="controls" style="margin-top:16px">
+    <button id="prev">← Prev</button>
+    <button id="learning">✗ Still learning</button>
+    <button id="known" class="primary">✓ Got it</button>
+    <button id="next">Next →</button>
+  </div>
+  <div class="hint">Keys: Space = flip · ← → = navigate · K = got it · L = still learning</div>
+
+<script>
+  // [number, basic word, advanced synonym]
+  const RAW = [
+    [41,"Freedom","Liberty"],[42,"Future","Prospect"],[43,"Generous","Kindhearted"],
+    [44,"Happy","Joyful"],[45,"Hard","Difficult"],[46,"Honest","Sincere"],
+    [47,"Important","Significant"],[48,"Journey","Voyage"],[49,"Kind","Benevolent"],
+    [50,"Knowledge","Wisdom"],[51,"Large","Vast"],[52,"Little","Petite"],
+    [53,"Locate","Discover"],[54,"Many","Numerous"],[55,"Modern","Contemporary"],
+    [56,"Natural","Organic"],[57,"Often","Frequently"],[58,"Raise","Elevate"],
+    [59,"Reason","Logic"],[60,"Receive","Obtain"],[61,"Beautiful","Gorgeous"],
+    [62,"Brave","Courageous"],[63,"Calm","Tranquil"],[64,"Careful","Cautious"],
+    [65,"Change","Transform"],[66,"Clear","Lucid"],[67,"Clever","Intelligent"],
+    [68,"Cold","Chilly"],[69,"Comfortable","Cozy"],[70,"Complete","Entire"],
+    [71,"Confident","Self-assured"],[72,"Create","Originate"],[73,"Difficult","Challenging"],
+    [74,"Early","Premature"],[75,"Easy","Effortless"],[76,"End","Conclude"],
+    [77,"Excited","Enthusiastic"],[78,"Famous","Renowned"],[79,"Fast","Rapid"],
+    [80,"Fear","Dread"],[81,"Beautiful","Gorgeous"],[82,"Boring","Monotonous"],
+    [83,"Brilliant","Radiant"],[84,"Busy","Occupied"],[85,"Careful","Cautious"],
+    [86,"Courageous","Valiant"],[87,"Different","Distinct"],[88,"Difficult","Challenging"],
+    [89,"Empty","Vacant"],[90,"End","Terminate"],[91,"Excellent","Outstanding"],
+    [92,"Fair","Just"],[93,"Fault","Flaw"],[94,"Friend","Companion"],
+    [95,"Happy","Joyful"],[96,"Important","Crucial"],[97,"Kind","Benevolent"],
+    [98,"Large","Vast"],[99,"Leave","Depart"],[100,"Learn","Acquire"]
+  ];
+
+  // Remove exact duplicate pairs (the source images repeat a few)
+  const seen = new Set();
+  const ALL = RAW.filter(([n,a,b]) => {
+    const key = a + "|" + b;
+    if (seen.has(key)) return false;
+    seen.add(key); return true;
+  }).map(([n,basic,adv]) => ({n,basic,adv}));
+
+  let deck = [...ALL];
+  let i = 0;
+  let basicFirst = true;
+  let known = new Set(JSON.parse(localStorage.getItem("known") || "[]"));
+  let learning = new Set(JSON.parse(localStorage.getItem("learning") || "[]"));
+
+  const $ = id => document.getElementById(id);
+  const card = $("card");
+
+  function save() {
+    localStorage.setItem("known", JSON.stringify([...known]));
+    localStorage.setItem("learning", JSON.stringify([...learning]));
+  }
+
+  function render() {
+    card.classList.remove("flipped");
+    if (!deck.length) { $("frontText").textContent = "No cards here 🎉"; $("backText").textContent = ""; $("progress").textContent=""; return; }
+    const c = deck[i];
+    $("frontText").textContent = basicFirst ? c.basic : c.adv;
+    $("backText").textContent  = basicFirst ? c.adv : c.basic;
+    $("frontLabel").textContent = basicFirst ? "Basic word" : "Advanced synonym";
+    $("backLabel").textContent  = basicFirst ? "Advanced synonym" : "Basic word";
+    $("progress").textContent = `Card ${i+1} / ${deck.length}  ·  ✓ ${known.size}  ·  ✗ ${learning.size}`;
+    $("barFill").style.width = (known.size / ALL.length * 100) + "%";
+  }
+
+  const flip = () => card.classList.toggle("flipped");
+  const next = () => { if (deck.length) { i = (i+1) % deck.length; render(); } };
+  const prev = () => { if (deck.length) { i = (i-1+deck.length) % deck.length; render(); } };
+
+  function mark(isKnown) {
+    if (!deck.length) return;
+    const key = deck[i].basic + "|" + deck[i].adv;
+    if (isKnown) { known.add(key); learning.delete(key); }
+    else { learning.add(key); known.delete(key); }
+    save(); next();
+  }
+
+  $("scene").onclick = flip;
+  $("next").onclick = next;
+  $("prev").onclick = prev;
+  $("known").onclick = () => mark(true);
+  $("learning").onclick = () => mark(false);
+
+  $("shuffle").onclick = () => {
+    for (let j = deck.length-1; j > 0; j--) {
+      const k = Math.floor(Math.random()*(j+1));
+      [deck[j], deck[k]] = [deck[k], deck[j]];
+    }
+    i = 0; render();
+  };
+
+  $("direction").onclick = () => {
+    basicFirst = !basicFirst;
+    $("direction").textContent = basicFirst ? "Basic → Advanced" : "Advanced → Basic";
+    render();
+  };
+
+  let learningMode = false;
+  $("learningOnly").onclick = () => {
+    learningMode = !learningMode;
+    deck = learningMode ? ALL.filter(c => learning.has(c.basic+"|"+c.adv)) : [...ALL];
+    $("learningOnly").textContent = learningMode ? 'Show all cards' : 'Review "learning" only';
+    i = 0; render();
+  };
+
+  $("reset").onclick = () => {
+    known.clear(); learning.clear(); save();
+    learningMode = false; deck = [...ALL]; i = 0;
+    $("learningOnly").textContent = 'Review "learning" only';
+    render();
+  };
+
+  document.addEventListener("keydown", e => {
+    if (e.code === "Space") { e.preventDefault(); flip(); }
+    else if (e.key === "ArrowRight") next();
+    else if (e.key === "ArrowLeft") prev();
+    else if (e.key.toLowerCase() === "k") mark(true);
+    else if (e.key.toLowerCase() === "l") mark(false);
+  });
+
+  render();
+</script>
+</body>
+</html>
